@@ -1,0 +1,74 @@
+.DS_Store
+Thumbs.db
+
+# Logs and temp files
+*.log
+*.tmp
+*.pid
+logs/
+tmp/
+temp/
+
+# Editor settings
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Environment files
+.env
+.env.*
+!.env.example
+!.env.sample
+Backend/.env
+Backend/.env.*
+!Backend/.env.example
+!Backend/.env.sample
+Backend/**/.env
+Backend/**/.env.*
+!Backend/**/.env.example
+!Backend/**/.env.sample
+MVP_Frontend/.env
+MVP_Frontend/.env.*
+!MVP_Frontend/.env.example
+!MVP_Frontend/.env.sample
+
+# Frontend dependencies and build output
+MVP_Frontend/node_modules/
+MVP_Frontend/dist/
+MVP_Frontend/dist-ssr/
+MVP_Frontend/.vite/
+MVP_Frontend/.eslintcache
+MVP_Frontend/coverage/
+MVP_Frontend/.turbo/
+MVP_Frontend/*.local
+
+# Python virtual environments and caches
+Backend/myenv/
+Backend/**/venv/
+Backend/**/.venv/
+Backend/**/__pycache__/
+Backend/**/*.py[cod]
+Backend/**/*.pyo
+Backend/**/.pytest_cache/
+Backend/**/.mypy_cache/
+Backend/**/.ruff_cache/
+Backend/**/.ipynb_checkpoints/
+
+# Backend generated data, artifacts, and weights
+Backend/artifacts/
+Backend/ai-pulse-pipeline/artifacts/
+Backend/ai-pulse-pipeline/data/
+Backend/data/
+Backend/**/artifacts/
+Backend/**/outputs/
+Backend/**/*.pt
+Backend/**/*.pth
+Backend/**/*.bin
+Backend/**/*.onnx
+Backend/**/*.ckpt
+Backend/**/*.safetensors
