@@ -1,26 +1,31 @@
-# -*- coding: utf-8 -*-
 import json
+import re
+
 from jiwer import wer
 from tqdm import tqdm
+
 from asr_diar import transcribe
 from config import ASR_MODEL_SIZE
 
-def normalize(s):
-    import re
-    s = s.lower()
-    s = re.sub(r"[^\w\s\u0600-\u06FF]", " ", s)
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
+
+def normalize(text):
+    text = text.lower()
+    text = re.sub(r"[^\w\s؀-ۿ]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
 
 def main(input_jsonl="data/audio_calls.jsonl"):
-    refs, hyps = [], []
+    references, hypotheses = [], []
     with open(input_jsonl, "r", encoding="utf-8") as f:
-        for ln in tqdm(f):
-            ex = json.loads(ln)
-            ref = normalize(ex.get("ref",""))
-            hyp = normalize(transcribe(ex["audio_path"], lang="ar", model_size=ASR_MODEL_SIZE)["text"])
-            refs.append(ref); hyps.append(hyp)
-    print("WER:", wer(refs, hyps))
+        for line in tqdm(f):
+            call = json.loads(line)
+            reference = normalize(call.get("ref", ""))
+            hypothesis = normalize(transcribe(call["audio_path"], lang="ar", model_size=ASR_MODEL_SIZE)["text"])
+            references.append(reference)
+            hypotheses.append(hypothesis)
+    print("WER:", wer(references, hypotheses))
+
 
 if __name__ == "__main__":
     main()

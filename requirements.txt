@@ -1,0 +1,4 @@
+# Python dependencies for the backend pipeline and API.
+# The canonical list lives next to the pipeline; this re-exports it so you can
+# install from the repo root with: pip install -r requirements.txt
+-r Backend/ai-pulse-pipeline/requirements.txt

@@ -104,52 +104,45 @@ def _load_split(split: str, subset: Optional[str], token: Optional[str]):
 
 def main(n=12, split="test", subset="ar"):
     load_dotenv()
-    # 1) Token: we accept either var name
     token = os.getenv("HUGGINGFACE_TOKEN") or os.getenv("HUGGINGFACE_HUB_TOKEN")
     if not token:
         raise RuntimeError("No HF token found. Set HUGGINGFACE_HUB_TOKEN or HUGGINGFACE_TOKEN in your env or .env file.")
 
-    # Allow override from env / kwargs for different language subsets
     subset = os.getenv("COMMON_VOICE_SUBSET", subset)
 
-    ds_ar = _load_split(split, subset, token)
-    ds_ar = ds_ar.cast_column("audio", Audio(decode=False))
+    dataset = _load_split(split, subset, token)
+    dataset = dataset.cast_column("audio", Audio(decode=False))
 
-    # 3) Prepare output dirs/files
-    wav_dir = Path("data/cv_ar_wav"); wav_dir.mkdir(parents=True, exist_ok=True)
-    out_jsonl = Path("data/audio_calls.jsonl")
-    out = out_jsonl.open("w", encoding="utf-8")
+    wav_dir = Path("data/cv_ar_wav")
+    wav_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = Path("data/audio_calls.jsonl")
+    manifest = manifest_path.open("w", encoding="utf-8")
 
-    # 4) Iterate Arabic rows, decode audio, save 16kHz WAV locally
-    #    (datasets will download only the selected audio files lazily)
     count = 0
-    for ex in tqdm(ds_ar, desc=f"Exporting {split} (ar)"):
-        # 'audio' column -> dict with 'array' and 'sampling_rate'
-        audio = ex["audio"]
-        path = audio.get("path") if isinstance(audio, dict) else None
-        if not path:
+    for example in tqdm(dataset, desc=f"Exporting {split} (ar)"):
+        audio = example["audio"]
+        source_path = audio.get("path") if isinstance(audio, dict) else None
+        if not source_path:
             continue
-        arr, sr = sf.read(path)
-        sent = ex.get("sentence") or ""
+        samples, sample_rate = sf.read(source_path)
+        sentence = example.get("sentence") or ""
 
         call_id = f"CVAR_{split}_{count:04d}"
         wav_path = wav_dir / f"{call_id}.wav"
-        # write as 16k mono WAV
-        sf.write(str(wav_path), arr, sr)  # Whisper resamples internally if needed; 16k is fine
+        sf.write(str(wav_path), samples, sample_rate)
 
-        # write manifest line
-        out.write(json.dumps({
+        manifest.write(json.dumps({
             "call_id": call_id,
             "audio_path": str(wav_path),
-            "ref": sent
+            "ref": sentence,
         }, ensure_ascii=False) + "\n")
 
         count += 1
         if count >= n:
             break
 
-    out.close()
-    print(f"✓ Wrote {count} items to {out_jsonl}")
+    manifest.close()
+    print(f"Wrote {count} items to {manifest_path}")
 
 if __name__ == "__main__":
     import argparse

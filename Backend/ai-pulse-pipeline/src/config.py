@@ -1,11 +1,9 @@
-# -*- coding: utf-8 -*-
+# Providers and toggles
+ASR_MODEL_SIZE = "medium"       # use "large-v3" on GPU, "medium" on CPU
+USE_OPENAI_FOR_SUMMARY = True   # False falls back to the local HF mT5 model
+USE_OPENAI_FOR_CLASSIFY = True  # False falls back to HF zero-shot classification
 
-# === Providers / toggles ===
-ASR_MODEL_SIZE = "medium"      # "large-v3" if you have GPU; otherwise "medium"
-USE_OPENAI_FOR_SUMMARY = False # True to use OpenAI (needs OPENAI_API_KEY), else HF mT5
-USE_OPENAI_FOR_CLASSIFY = False# True -> OpenAI few-shot classification; else HF zero-shot
-
-# === Taxonomy (aligned with your file) ===
+# Topic taxonomy (Arabic labels)
 TOPIC_LABELS_AR = [
     "العلاقات الأسرية",
     "الضغط الدراسي/العملي",
@@ -16,26 +14,26 @@ TOPIC_LABELS_AR = [
     "صحة نفسية عامة",
     "صحة جسدية/إحالة",
     "العنف/السلامة",
-    "أخرى"
+    "أخرى",
 ]
 
 EMOTION_LABELS_AR = ["حزن", "قلق", "خوف", "غضب", "أمل", "ارتياح", "محايد"]
 
-# Urgency thresholds (recall-first for P1)
+# Urgency scoring: recall-first so we rarely miss a P1.
 URGENCY_THRESHOLDS = dict(P1=0.70, P2=0.40)
 URGENT_KEYWORDS = [
-    "انتحار","أنتحر","إيذاء نفسي","أؤذي نفسي","قتل","أقتل","تهديد","خطر",
-    "اعتداء","اغتصاب","دم","حريق","طوارئ","فورا","الآن","مساعدة حالا","خطة أمان"
+    "انتحار", "أنتحر", "إيذاء نفسي", "أؤذي نفسي", "قتل", "أقتل", "تهديد", "خطر",
+    "اعتداء", "اغتصاب", "دم", "حريق", "طوارئ", "فورا", "الآن", "مساعدة حالا", "خطة أمان",
 ]
 
-# Summaries
+# Summary length bounds (in words)
 SUMMARY_MIN = 20
 SUMMARY_MAX = 70
 
-# JSON output paths
+# Output files (one row per call in the bundle)
 OUT_ASR_CHUNKS = "artifacts/asr_chunks.jsonl"
 OUT_REDACTED = "artifacts/redacted_interactions.jsonl"
 OUT_TOPIC = "artifacts/topic_intent.jsonl"
 OUT_EMOTION = "artifacts/emotion_distress.jsonl"
 OUT_URGENCY = "artifacts/urgency.jsonl"
-OUT_BUNDLE = "artifacts/pipeline_bundle.jsonl"  # everything for each call
+OUT_BUNDLE = "artifacts/pipeline_bundle.jsonl"

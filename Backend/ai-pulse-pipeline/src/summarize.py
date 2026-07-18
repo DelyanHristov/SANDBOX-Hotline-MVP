@@ -1,15 +1,12 @@
-# -*- coding: utf-8 -*-
-"""
-Arabic summarisation with graceful fallbacks when transformers/OpenAI are absent.
-"""
+"""Arabic summarization with graceful fallbacks when OpenAI/transformers are absent."""
 import os
 import re
 from typing import Any, Optional
 
 try:
-    from transformers import pipeline  # type: ignore
-except ImportError:  # pragma: no cover - optional dependency
-    pipeline = None  # type: ignore
+    from transformers import pipeline
+except ImportError:
+    pipeline = None
 
 from dotenv import load_dotenv
 
@@ -17,28 +14,28 @@ from .config import SUMMARY_MAX, SUMMARY_MIN, USE_OPENAI_FOR_SUMMARY
 
 load_dotenv()
 
-_SUM: Any = None
-_SUM_ERROR: Optional[Exception] = None
+_summarizer: Any = None
+_summarizer_error: Optional[Exception] = None
 
 
-def _hf_sum():
-    global _SUM, _SUM_ERROR
-    if _SUM_ERROR is not None:
-        raise RuntimeError(str(_SUM_ERROR))
-    if _SUM is None:
+def get_summarizer():
+    global _summarizer, _summarizer_error
+    if _summarizer_error is not None:
+        raise RuntimeError(str(_summarizer_error))
+    if _summarizer is None:
         if pipeline is None:
-            _SUM_ERROR = RuntimeError("transformers is not installed.")
+            _summarizer_error = RuntimeError("transformers is not installed.")
             raise RuntimeError("transformers is not installed.")
         try:
-            _SUM = pipeline("summarization", model="csebuetnlp/mT5_multilingual_XLSum")
-        except Exception as err:  # pragma: no cover - depends on external download
-            _SUM_ERROR = err
-            raise RuntimeError(f"HF summarizer unavailable: {err}") from err
-    return _SUM
+            _summarizer = pipeline("summarization", model="csebuetnlp/mT5_multilingual_XLSum")
+        except Exception as error:
+            _summarizer_error = error
+            raise RuntimeError(f"HF summarizer unavailable: {error}") from error
+    return _summarizer
 
 
-def _fallback_summary(text: str) -> str:
-    # Use first one or two sentences; trim/pad to fit target length envelope.
+def fallback_summary(text: str) -> str:
+    # Take the first sentence or two and trim to the target length.
     sentences = re.split(r"(?<=[\.!\؟])\s+", text)
     summary = " ".join(sentences[:2]) if len(sentences) > 1 else sentences[0]
     words = summary.split()
@@ -58,27 +55,28 @@ def summarize_ar(text: str) -> str:
 
         client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
         model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-        sys_prompt = "أنت مساعد يكتب ملخصات عربية موجزة، داعمة، وخالية من أي تشخيصات."
+        system_prompt = "أنت مساعد يكتب ملخصات عربية موجزة، داعمة، وخالية من أي تشخيصات."
         user_prompt = (
             f"لخص النص التالي في {SUMMARY_MIN}-{SUMMARY_MAX} كلمة، بلغة حساسة وغير تشخيصية، "
             "ودون أي معلومات تعريفية:\n\n"
             f"{text}"
         )
         try:
-            result = client.chat.completions.create(
+            response = client.chat.completions.create(
                 model=model,
-                messages=[{"role": "system", "content": sys_prompt}, {"role": "user", "content": user_prompt}],
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
                 temperature=0,
             )
-            return result.choices[0].message.content.strip()
+            return response.choices[0].message.content.strip()
         except Exception:
-            # Fall back to HF/heuristic if OpenAI call fails for any reason.
-            pass
+            pass  # fall through to HF/heuristic
 
     try:
-        summarizer = _hf_sum()
-        inp = "summarize: " + text
-        out = summarizer(inp, min_length=SUMMARY_MIN, max_length=SUMMARY_MAX, truncation=True)
-        return out[0]["summary_text"]
+        summarizer = get_summarizer()
+        output = summarizer("summarize: " + text, min_length=SUMMARY_MIN, max_length=SUMMARY_MAX, truncation=True)
+        return output[0]["summary_text"]
     except Exception:
-        return _fallback_summary(text)
+        return fallback_summary(text)

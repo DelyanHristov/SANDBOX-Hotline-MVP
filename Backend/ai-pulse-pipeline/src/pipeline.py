@@ -1,10 +1,7 @@
-# -*- coding: utf-8 -*-
 import json
-from typing import Dict, Any, List
+from typing import Any, Dict, List
 
 from .config import (
-    TOPIC_LABELS_AR,
-    EMOTION_LABELS_AR,
     OUT_ASR_CHUNKS,
     OUT_REDACTED,
     OUT_TOPIC,
@@ -20,82 +17,93 @@ from .pii import redact_pii
 from .classify import dialect_id, topic_intent, emotion_distress, urgency
 from .summarize import summarize_ar
 
-def _write_jsonl(path: str, rows: List[Dict[str, Any]]):
+
+def append_jsonl(path: str, rows: List[Dict[str, Any]]):
     with open(path, "a", encoding="utf-8") as f:
-        for r in rows:
-            f.write(json.dumps(r, ensure_ascii=False) + "\n")
+        for row in rows:
+            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+
 
 def process_audio_call(call_id: str, audio_path: str):
-    # 1) ASR + diarization + align -> ASR Output (chunk)
-    asr = transcribe(audio_path, lang="ar", model_size=ASR_MODEL_SIZE)
-    diar = diarize(audio_path)
-    chunks = align_segments(asr["segments"], diar)
+    # Transcribe, diarize, then align words to the speaker who said them.
+    transcript = transcribe(audio_path, lang="ar", model_size=ASR_MODEL_SIZE)
+    speaker_turns = diarize(audio_path)
+    aligned = align_segments(transcript["segments"], speaker_turns)
 
-    asr_chunks = [{"call_id": call_id, "t0": c["t0"], "t1": c["t1"], "speaker": c["speaker"], "text": c["text"]} for c in chunks]
-    _write_jsonl(OUT_ASR_CHUNKS, asr_chunks)
+    chunks = [
+        {"call_id": call_id, "t0": c["t0"], "t1": c["t1"], "speaker": c["speaker"], "text": c["text"]}
+        for c in aligned
+    ]
+    append_jsonl(OUT_ASR_CHUNKS, chunks)
 
-    # 2) Normalize + 3) PII scrub -> Redacted Interaction
+    # Normalize and scrub PII before anything is written downstream.
     turns = []
-    red_logs_all = []
-    for c in asr_chunks:
-        norm = normalize_arabic(c["text"])
-        red, log = redact_pii(norm)
-        turns.append({"spk": c["speaker"] if c["speaker"]!="unknown" else "caller", "t0": c["t0"], "t1": c["t1"], "text": red})
-        red_logs_all.extend(log)
-    redacted = {"call_id": call_id, "turns": turns, "redaction_log": red_logs_all}
-    _write_jsonl(OUT_REDACTED, [redacted])
+    redaction_log = []
+    for chunk in chunks:
+        normalized = normalize_arabic(chunk["text"])
+        redacted_text, log = redact_pii(normalized)
+        speaker = chunk["speaker"] if chunk["speaker"] != "unknown" else "caller"
+        turns.append({"spk": speaker, "t0": chunk["t0"], "t1": chunk["t1"], "text": redacted_text})
+        redaction_log.extend(log)
+    redacted = {"call_id": call_id, "turns": turns, "redaction_log": redaction_log}
+    append_jsonl(OUT_REDACTED, [redacted])
 
-    # 4a) Dialect (on concatenated redacted text)
-    txt = " ".join(t["text"] for t in turns)
-    dialect = dialect_id(txt)
+    full_text = " ".join(turn["text"] for turn in turns)
+    dialect = dialect_id(full_text)
 
-    # 4b) Topic / Intent
-    top = topic_intent(txt)
-    _write_jsonl(OUT_TOPIC, [{"call_id": call_id, "topic": top["topic"], "subtopic":"", "confidence": top["confidence"]}])
+    topic = topic_intent(full_text)
+    append_jsonl(OUT_TOPIC, [{"call_id": call_id, "topic": topic["topic"], "subtopic": "", "confidence": topic["confidence"]}])
 
-    # 4c) Emotion / Distress
-    emo = emotion_distress(txt)
-    _write_jsonl(OUT_EMOTION, [{"call_id": call_id, "emotion_now": emo["emotion_now"], "trend": emo["trend"], "evidence": ""}])
+    emotion = emotion_distress(full_text)
+    append_jsonl(OUT_EMOTION, [{"call_id": call_id, "emotion_now": emotion["emotion_now"], "trend": emotion["trend"], "evidence": ""}])
 
-    # 4d) Urgency (P1–P3)
-    urg = urgency(txt, top["topic"])
-    _write_jsonl(OUT_URGENCY, [{"call_id": call_id, "urgency": urg["urgency"], "reason": urg["reason"]}])
+    urgency_result = urgency(full_text, topic["topic"])
+    append_jsonl(OUT_URGENCY, [{"call_id": call_id, "urgency": urgency_result["urgency"], "reason": urgency_result["reason"]}])
 
-    # 4e) Non-clinical summary
-    summary = summarize_ar(txt)
+    summary = summarize_ar(full_text)
 
-    # Bundle everything (one row per call)
     bundle = {
         "call_id": call_id,
-        "asr_chunks": asr_chunks,
+        "asr_chunks": chunks,
         "redacted": redacted,
         "dialect": dialect,
-        "topic": {"topic": top["topic"], "confidence": top["confidence"]},
-        "emotion": {"now": emo["emotion_now"], "trend": emo["trend"]},
-        "urgency": urg,
-        "summary": summary
+        "topic": {"topic": topic["topic"], "confidence": topic["confidence"]},
+        "emotion": {"now": emotion["emotion_now"], "trend": emotion["trend"]},
+        "urgency": urgency_result,
+        "summary": summary,
     }
-    _write_jsonl(OUT_BUNDLE, [bundle])
+    append_jsonl(OUT_BUNDLE, [bundle])
+
 
 def process_text_call(call_id: str, text: str):
-    # Simulates chat/SMS path (skip ASR/diar)
-    norm = normalize_arabic(text)
-    red, log = redact_pii(norm)
-    redacted = {"call_id": call_id, "turns": [{"spk":"caller","t0":0.0,"t1":0.0,"text": red}], "redaction_log": log}
-    _write_jsonl(OUT_REDACTED, [redacted])
+    # Chat/SMS path: no audio, so skip ASR and diarization.
+    normalized = normalize_arabic(text)
+    redacted_text, log = redact_pii(normalized)
+    redacted = {
+        "call_id": call_id,
+        "turns": [{"spk": "caller", "t0": 0.0, "t1": 0.0, "text": redacted_text}],
+        "redaction_log": log,
+    }
+    append_jsonl(OUT_REDACTED, [redacted])
 
-    dialect = dialect_id(red)
-    top = topic_intent(red)
-    emo = emotion_distress(red)
-    urg = urgency(red, top["topic"])
-    summary = summarize_ar(red)
+    dialect = dialect_id(redacted_text)
+    topic = topic_intent(redacted_text)
+    emotion = emotion_distress(redacted_text)
+    urgency_result = urgency(redacted_text, topic["topic"])
+    summary = summarize_ar(redacted_text)
 
-    _write_jsonl(OUT_TOPIC, [{"call_id": call_id, "topic": top["topic"], "subtopic":"", "confidence": top["confidence"]}])
-    _write_jsonl(OUT_EMOTION, [{"call_id": call_id, "emotion_now": emo["emotion_now"], "trend": emo["trend"], "evidence": ""}])
-    _write_jsonl(OUT_URGENCY, [{"call_id": call_id, "urgency": urg["urgency"], "reason": urg["reason"]}])
+    append_jsonl(OUT_TOPIC, [{"call_id": call_id, "topic": topic["topic"], "subtopic": "", "confidence": topic["confidence"]}])
+    append_jsonl(OUT_EMOTION, [{"call_id": call_id, "emotion_now": emotion["emotion_now"], "trend": emotion["trend"], "evidence": ""}])
+    append_jsonl(OUT_URGENCY, [{"call_id": call_id, "urgency": urgency_result["urgency"], "reason": urgency_result["reason"]}])
 
-    bundle = {"call_id": call_id, "asr_chunks": [], "redacted": redacted, "dialect": dialect,
-              "topic": {"topic": top["topic"], "confidence": top["confidence"]},
-              "emotion": {"now": emo["emotion_now"], "trend": emo["trend"]},
-              "urgency": urg, "summary": summary}
-    _write_jsonl(OUT_BUNDLE, [bundle])
+    bundle = {
+        "call_id": call_id,
+        "asr_chunks": [],
+        "redacted": redacted,
+        "dialect": dialect,
+        "topic": {"topic": topic["topic"], "confidence": topic["confidence"]},
+        "emotion": {"now": emotion["emotion_now"], "trend": emotion["trend"]},
+        "urgency": urgency_result,
+        "summary": summary,
+    }
+    append_jsonl(OUT_BUNDLE, [bundle])
